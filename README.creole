@@ -1,0 +1,2 @@
+== Build-a-Plug
+Bukkit Plugin to create new text commands on the fly, in game.
