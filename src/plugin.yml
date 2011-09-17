@@ -1,0 +1,17 @@
+name: PluginBuilder
+version: Angry Alpha
+description: Custom Command Builder for Bukkit
+load: STARTUP
+author: nickrak
+website: http://github.com/nickrak/PluginBuilder
+main: nickrak.pluginbuilder.PluginBuilder
+database: no
+#softdepend
+commands:
+    pb:
+        description: PluginBuilder configuration command
+        permission: pluginbuilder.build
+permissions:
+    pluginbuilder.build:
+        description: Allows the player to create custom commands.
+        default: op
