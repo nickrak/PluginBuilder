@@ -6,7 +6,6 @@ author: nickrak
 website: http://github.com/nickrak/PluginBuilder
 main: nickrak.pluginbuilder.PluginBuilder
 database: no
-#softdepend
 commands:
     pb:
         description: PluginBuilder configuration command
