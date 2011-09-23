@@ -1,12 +1,11 @@
 package nickrak.pluginbuilder;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 import org.bukkit.ChatColor;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event.Priority;
@@ -17,12 +16,13 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.config.Configuration;
 
 public final class PluginBuilder extends JavaPlugin
 {
 	protected Logger l = null;
 	protected ConcurrentHashMap<String, String[]> scripts = null;
-	protected ConcurrentHashMap<Player, ArrayList<String>> scriptEditors = null;
+	protected ScriptEditor scriptEditor;
 
 	public void info(final String msg)
 	{
@@ -35,7 +35,49 @@ public final class PluginBuilder extends JavaPlugin
 		this.info("Disabled");
 		this.l = null;
 		this.scripts = null;
-		this.scriptEditors = null;
+		this.scriptEditor = null;
+	}
+
+	protected void saveScripts()
+	{
+		final Configuration config = this.getConfiguration();
+		config.load();
+
+		final ArrayList<String> scripts = new ArrayList<String>();
+		config.removeProperty("source");
+
+		for (final String scriptName : this.scripts.keySet())
+		{
+			final ArrayList<String> scriptContents = new ArrayList<String>();
+			for (final String line : this.scripts.get(scriptName))
+			{
+				scriptContents.add(line);
+			}
+			if (scriptContents.size() > 0)
+			{
+				config.setProperty("source." + scriptName, scriptContents);
+				scripts.add(scriptName);
+			}
+		}
+
+		config.setProperty("scripts", scripts);
+		config.save();
+	}
+
+	protected void loadScripts()
+	{
+		final Configuration config = this.getConfiguration();
+		config.load();
+
+		final List<String> scripts = config.getStringList("scripts", new ArrayList<String>());
+		for (final String scriptName : scripts)
+		{
+			final List<String> scriptContents = config.getStringList("source." + scriptName, null);
+			if (scriptContents != null && !scriptContents.isEmpty())
+			{
+				this.scripts.put(scriptName, scriptContents.toArray(new String[0]));
+			}
+		}
 	}
 
 	@Override
@@ -43,12 +85,12 @@ public final class PluginBuilder extends JavaPlugin
 	{
 		this.l = Logger.getLogger("PluginBuilder");
 		this.scripts = new ConcurrentHashMap<String, String[]>();
-		this.scriptEditors = new ConcurrentHashMap<Player, ArrayList<String>>();
+
+		this.loadScripts();
 
 		final PlayerListener pl = new PlayerListener()
 		{
 			final PluginBuilder pb = PluginBuilder.this;
-			final ConcurrentHashMap<Player, ArrayList<String>> scriptEditors = this.pb.scriptEditors;
 
 			@Override
 			public void onPlayerChat(PlayerChatEvent event)
@@ -61,14 +103,15 @@ public final class PluginBuilder extends JavaPlugin
 					final String command = msg.split(" ")[0].substring(1);
 					final String[] args = msg.substring(command.length()).trim().split(" ");
 
-					if (!this.pb.scripts.containsKey(command))
+					if (!this.pb.scripts.containsKey(command.toLowerCase()))
 					{
 						return;
 					}
 
-					if (this.pb.executeCommand(command, sender, args))
+					if (this.pb.executeCommand(command.toLowerCase(), sender, args))
 					{
-						final StringBuilder sb = new StringBuilder(sender.getName() + " invoked <" + command + "> with these arguments [");
+						final StringBuilder sb = new StringBuilder(sender.getName() + " invoked <" + command.toLowerCase()
+								+ "> with these arguments [");
 						for (final String arg : args)
 						{
 							sb.append(arg + ", ");
@@ -80,140 +123,17 @@ public final class PluginBuilder extends JavaPlugin
 					}
 					else
 					{
-						this.pb.l.warning(sender.getName() + " attempted to invoke <" + command + "> which failed.");
+						this.pb.l.warning(sender.getName() + " attempted to invoke <" + command.toLowerCase() + "> which failed.");
 					}
 
 					event.setCancelled(true);
-				}
-
-				if (this.scriptEditors.containsKey(sender))
-				{
-					if (msg.startsWith(":"))
-					{
-						if (msg.equalsIgnoreCase(":h"))
-						{
-							msg = ":h 1";
-						}
-						final char command = msg.charAt(1);
-						final String data = msg.length() > 2 ? msg.substring(3) : null;
-						final ArrayList<String> editor = this.scriptEditors.get(sender);
-
-						switch (command)
-						{
-						case 'a': // Append
-							editor.add(data);
-							sender.sendMessage(ChatColor.GRAY + "Appended.");
-							break;
-						case 's': // Save
-							this.pb.scripts.put(data, editor.toArray(new String[0]));
-							sender.sendMessage(ChatColor.GRAY + "Saved.");
-							break;
-						case 'l': // Load
-							editor.clear();
-							if (!this.pb.scripts.containsKey(data))
-							{
-								sender.sendMessage(ChatColor.RED + "No such script found.");
-								break;
-							}
-							final String[] lines = this.pb.scripts.get(data);
-							for (final String line : lines)
-							{
-								editor.add(line);
-							}
-							sender.sendMessage(ChatColor.GRAY + "Loaded.");
-							break;
-						case 'q': // Quit
-							this.scriptEditors.remove(sender);
-							sender.sendMessage(ChatColor.GRAY + "Editor Closed.");
-							break;
-						case 'c': // Clear
-							editor.clear();
-							sender.sendMessage(ChatColor.GRAY + "Cleared.");
-							break;
-						case 'p': // Print
-							sender.sendMessage(ChatColor.GRAY + "Printing Script Contents...");
-							for (int i = 0; i < editor.size(); i++)
-							{
-								sender.sendMessage(ChatColor.YELLOW + "<" + i + "> " + editor.get(i));
-							}
-							if (editor.size() == 0)
-							{
-								sender.sendMessage(ChatColor.YELLOW + "Script is Empty");
-							}
-							sender.sendMessage(ChatColor.GRAY + "Print Complete.");
-							break;
-						case 'd': // Delete
-							try
-							{
-								final int line = Integer.parseInt(data);
-								editor.remove(line);
-								sender.sendMessage(ChatColor.GRAY + "Deleted.");
-							}
-							catch (final NumberFormatException nfe)
-							{
-								sender.sendMessage(ChatColor.GRAY + "Not a line number.");
-							}
-							catch (final IndexOutOfBoundsException be)
-							{
-								sender.sendMessage(ChatColor.GRAY + "No line with that number.");
-							}
-							break;
-						case 'i': // Insert
-							final int space = data.indexOf(' ');
-							if (space >= 0)
-							{
-								try
-								{
-									final int line = Integer.parseInt(data.substring(0, space));
-									editor.add(line, data.substring(space + 1));
-								}
-								catch (final NumberFormatException nfe)
-								{
-									sender.sendMessage(ChatColor.GRAY + "Not a line number.");
-								}
-								catch (final IndexOutOfBoundsException be)
-								{
-									sender.sendMessage(ChatColor.GRAY + "No line with that number.");
-								}
-							}
-							break;
-						case 'h': // Help
-						case '?':
-						default:
-							if (data != null && data.equalsIgnoreCase("2"))
-							{
-								sender.sendMessage(ChatColor.GRAY + "Usage Information (Page 2)");
-								sender.sendMessage(ChatColor.GRAY + ":h [page] // Displays help for the specified page.");
-								sender.sendMessage(ChatColor.GRAY + ":l [script name] // Loads a script to the buffer.");
-								sender.sendMessage(ChatColor.GRAY + ":s [script name] // Saves the buffer to a script name.");
-								sender.sendMessage(ChatColor.GRAY + ":d [line number] // Deletes the specified line.");
-								sender.sendMessage(ChatColor.GRAY + ":c // Clears the script editor.");
-							}
-							else
-							{
-								sender.sendMessage(ChatColor.GRAY + "Usage Information (Page 1)");
-								sender.sendMessage(ChatColor.GRAY + ":h [page] // Displays help for the specified page.");
-								sender.sendMessage(ChatColor.GRAY + ":a [code] // Appends the code to the end of the script.");
-								sender.sendMessage(ChatColor.GRAY + ":i [line number] [code] // Inserts the code at a specific line.");
-								sender.sendMessage(ChatColor.GRAY + ":p // Prints out the contents of the script.");
-								sender.sendMessage(ChatColor.GRAY + ":q // Closes the script editor, without saving.");
-							}
-							break;
-						}
-
-						event.setCancelled(true);
-					}
 				}
 			}
 
 			@Override
 			public void onPlayerQuit(PlayerQuitEvent event)
 			{
-				final Player p = event.getPlayer();
-				if (this.scriptEditors.containsKey(p))
-				{
-					this.scriptEditors.remove(p);
-				}
+				this.pb.scriptEditor.playerQuit(event.getPlayer());
 			}
 		};
 
@@ -221,6 +141,10 @@ public final class PluginBuilder extends JavaPlugin
 		pm.registerEvent(Type.PLAYER_CHAT, pl, Priority.Highest, this);
 		pm.registerEvent(Type.PLAYER_QUIT, pl, Priority.Monitor, this);
 
+		this.scriptEditor = new ScriptEditor(this);
+		this.getCommand("pb").setExecutor(this.scriptEditor);
+
+		this.info("Enabled <" + this.getDescription().getVersion() + ">");
 	}
 
 	public boolean isValidScript(final String[] parts)
@@ -275,13 +199,17 @@ public final class PluginBuilder extends JavaPlugin
 					}
 					else
 					{
+						this.l.warning(e.getMessage());
 						e.printStackTrace();
+						sender.sendMessage(e.getMessage());
 					}
 					return false;
 				}
 			}
 			return true;
 		}
+		sender.sendMessage(ChatColor.RED + "Not a valid script: <" + scriptName + ">");
+		this.l.warning("Not a valid script: <" + scriptName + ">");
 		return false;
 	}
 
@@ -394,29 +322,5 @@ public final class PluginBuilder extends JavaPlugin
 				}
 			}
 		}
-	}
-
-	@Override
-	public boolean onCommand(CommandSender sender, Command command, String label, String[] args)
-	{
-		if (sender instanceof Player)
-		{
-			final Player player = (Player) sender;
-			if (command.getName().equalsIgnoreCase("pb"))
-			{
-				if (this.scriptEditors.containsKey(player))
-				{
-					player.sendMessage(ChatColor.RED + "You already have an editor open.");
-				}
-				else
-				{
-					player.sendMessage(ChatColor.YELLOW + "You have opened the script editor");
-					this.scriptEditors.put(player, new ArrayList<String>());
-				}
-				return true;
-			}
-
-		}
-		return false;
 	}
 }

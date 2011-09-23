@@ -1,5 +1,5 @@
 name: PluginBuilder
-version: Angry Alpha
+version: 1.2 Candy
 description: Custom Command Builder for Bukkit
 load: STARTUP
 author: nickrak
@@ -8,7 +8,7 @@ main: nickrak.pluginbuilder.PluginBuilder
 database: no
 commands:
     pb:
-        description: PluginBuilder configuration command
+        description: PluginBuilder command
         permission: pluginbuilder.build
 permissions:
     pluginbuilder.build:
